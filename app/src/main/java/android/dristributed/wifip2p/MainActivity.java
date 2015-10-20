@@ -5,8 +5,9 @@ import android.net.wifi.WpsInfo;
 import android.net.wifi.p2p.WifiP2pConfig;
 import android.net.wifi.p2p.WifiP2pDevice;
 import android.net.wifi.p2p.WifiP2pManager;
-import android.net.wifi.p2p.nsd.WifiP2pUpnpServiceInfo;
-import android.net.wifi.p2p.nsd.WifiP2pUpnpServiceRequest;
+import android.net.wifi.p2p.nsd.WifiP2pDnsSdServiceInfo;
+import android.net.wifi.p2p.nsd.WifiP2pDnsSdServiceRequest;
+import android.net.wifi.p2p.nsd.WifiP2pServiceRequest;
 import android.os.Bundle;
 import android.support.design.widget.FloatingActionButton;
 import android.support.design.widget.Snackbar;
@@ -23,7 +24,9 @@ import android.widget.Toast;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 public class MainActivity extends AppCompatActivity {
@@ -35,6 +38,8 @@ public class MainActivity extends AppCompatActivity {
     ListView mPeerListView;
     ArrayAdapter<String> mAdapter;
     private volatile boolean discoverServiceRunning;
+    private WifiP2pDnsSdServiceInfo mServiceInfo;
+    private Map<String, String> mDnsRecord = new HashMap<>();
 
 
     @Override
@@ -48,8 +53,18 @@ public class MainActivity extends AppCompatActivity {
         fab.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                Snackbar.make(view, "Replace with your own action", Snackbar.LENGTH_LONG)
+
+                String count = mDnsRecord.get("count");
+                if (count != null) {
+                    mDnsRecord.put("count", String.valueOf(Long.parseLong(count) + 1));
+                } else {
+                    mDnsRecord.put("count", String.valueOf(1));
+                }
+
+                Snackbar.make(view, "Dns record updated " + mDnsRecord.get("count"), Snackbar.LENGTH_LONG)
                         .setAction("Action", null).show();
+
+                registerService();
                 discoverService();
             }
         });
@@ -105,54 +120,68 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void registerService() {
-        WifiP2pUpnpServiceInfo serviceInfo = WifiP2pUpnpServiceInfo.newInstance(
-                UUID.randomUUID().toString(),
-                "urn:schemas-upnp-org:device:MediaServer:1", //TODO
-                Collections.singletonList("urn:schemas-upnp-org:service:ContentDirectory:1")); //TODO
+        if (mServiceInfo != null) {
+            mManager.removeLocalService(mChannel, mServiceInfo, null);
+        }
+
+        // Service information.  Pass it an instance name, service type
+        // _protocol._transportlayer , and the map containing
+        // information other devices will want once they connect to this one.
+        mServiceInfo = WifiP2pDnsSdServiceInfo.newInstance("_test" + UUID.randomUUID(), "_wifip2p._hack", mDnsRecord);
 
         // Add the local service, sending the service info, network channel,
         // and listener that will be used to indicate success or failure of
         // the request.
-        mManager.addLocalService(mChannel, serviceInfo, new WifiP2pManager.ActionListener() {
+        mManager.addLocalService(mChannel, mServiceInfo, new WifiP2pManager.ActionListener() {
             @Override
             public void onSuccess() {
-                Log.i("WifiP2p", "service added with success");
+                Log.i("DNS-SD", "service added !");
             }
 
             @Override
             public void onFailure(int arg0) {
-                Log.w("WifiP2p", "failure with err code " + arg0);
+                // Command failed.  Check for P2P_UNSUPPORTED, ERROR, or BUSY
             }
         });
+
     }
 
     private void setupDiscoverService() {
-        mManager.setUpnpServiceResponseListener(mChannel, new WifiP2pManager.UpnpServiceResponseListener() {
+        WifiP2pManager.DnsSdTxtRecordListener txtListener = new WifiP2pManager.DnsSdTxtRecordListener() {
             @Override
-            public void onUpnpServiceAvailable(List<String> uniqueServiceNames, WifiP2pDevice srcDevice) {
-                Log.i("WifiP2p - UpnP", "services " + uniqueServiceNames);
-                addPeer(srcDevice.deviceAddress);
+            public void onDnsSdTxtRecordAvailable(
+                    String fullDomain, Map record, WifiP2pDevice device) {
+                Log.i("DNS-SD", "DnsSdTxtRecord available -" + record.toString());
+                Toast.makeText(MainActivity.this, "DnsSdTxtRecord available -" + record.toString(), Toast.LENGTH_LONG).show();
+                addPeer(device.deviceAddress);
             }
-        });
-        //WifiP2pServiceRequest serviceRequest = WifiP2pDnsSdServiceRequest.newInstance();
-        WifiP2pUpnpServiceRequest serviceRequest = WifiP2pUpnpServiceRequest.newInstance();
+        };
+        WifiP2pManager.DnsSdServiceResponseListener servListener = new WifiP2pManager.DnsSdServiceResponseListener() {
+            @Override
+            public void onDnsSdServiceAvailable(String instanceName, String registrationType,
+                                                WifiP2pDevice resourceType) {
+            }
+        };
+
+        mManager.setDnsSdResponseListeners(mChannel, servListener, txtListener);
+        WifiP2pServiceRequest serviceRequest = WifiP2pDnsSdServiceRequest.newInstance();
         mManager.addServiceRequest(mChannel,
                 serviceRequest,
                 new WifiP2pManager.ActionListener() {
                     @Override
                     public void onSuccess() {
-                        Log.i("WifiP2p", "request service ok");
+                        // Success!
                     }
 
                     @Override
                     public void onFailure(int code) {
-                        Log.w("WifiP2p - setupService", "failure with err code " + code);
+                        // Command failed.  Check for P2P_UNSUPPORTED, ERROR, or BUSY
                     }
                 });
+
     }
 
     boolean discoverService() {
-        //setupDiscoverService();
         if (discoverServiceRunning) {
             return false;
         }
