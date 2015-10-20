@@ -1,9 +1,12 @@
 package android.dristributed.wifip2p;
 
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.net.wifi.WpsInfo;
 import android.net.wifi.p2p.WifiP2pConfig;
 import android.net.wifi.p2p.WifiP2pDevice;
+import android.net.wifi.p2p.WifiP2pInfo;
 import android.net.wifi.p2p.WifiP2pManager;
 import android.net.wifi.p2p.nsd.WifiP2pUpnpServiceInfo;
 import android.net.wifi.p2p.nsd.WifiP2pUpnpServiceRequest;
@@ -21,20 +24,23 @@ import android.widget.ArrayAdapter;
 import android.widget.ListView;
 import android.widget.Toast;
 
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity implements WiFiDirectBroadcastReceiver.CallBackInterface, WifiP2pManager.ConnectionInfoListener{
     public static final int SERVER_PORT = 3000;
     final List<String> mPeerList = new ArrayList<String>();
     WifiP2pManager.Channel mChannel;
     WifiP2pManager mManager;
-    ;
     ListView mPeerListView;
     ArrayAdapter<String> mAdapter;
     private volatile boolean discoverServiceRunning;
+    private final IntentFilter intentFilter = new IntentFilter();
+    private WiFiDirectBroadcastReceiver receiver;
 
 
     @Override
@@ -43,6 +49,19 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
         Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
+
+        //  Indicates a change in the Wi-Fi P2P status.
+        intentFilter.addAction(WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION);
+
+        // Indicates a change in the list of available peers.
+        intentFilter.addAction(WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION);
+
+        // Indicates the state of Wi-Fi P2P connectivity has changed.
+        intentFilter.addAction(WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION);
+
+        // Indicates this device's details have changed.
+        intentFilter.addAction(WifiP2pManager.WIFI_P2P_THIS_DEVICE_CHANGED_ACTION);
+
 
         FloatingActionButton fab = (FloatingActionButton) findViewById(R.id.fab);
         fab.setOnClickListener(new View.OnClickListener() {
@@ -88,6 +107,22 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onPause() {
         super.onPause();
+        stopUpnpServices();
+        unregisterReceiver(receiver);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        receiver = new WiFiDirectBroadcastReceiver(mManager, mChannel, this);
+        registerReceiver(receiver, intentFilter);
+
+        registerService();
+        setupDiscoverService();
+        discoverService();
+    }
+
+    private void stopUpnpServices() {
         if (mManager != null) {
             mManager.cancelConnect(mChannel, null);
             mManager.stopPeerDiscovery(mChannel, null);
@@ -96,19 +131,11 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    @Override
-    protected void onResume() {
-        super.onResume();
-        registerService();
-        setupDiscoverService();
-        discoverService();
-    }
-
     private void registerService() {
         WifiP2pUpnpServiceInfo serviceInfo = WifiP2pUpnpServiceInfo.newInstance(
                 UUID.randomUUID().toString(),
-                "urn:schemas-upnp-org:device:MediaServer:1", //TODO
-                Collections.singletonList("urn:schemas-upnp-org:service:ContentDirectory:1")); //TODO
+                "urn:schemas-upnp-org:device:GameServer:1", //TODO
+                Collections.singletonList("urn:schemas-upnp-org:service:P4:1")); //TODO
 
         // Add the local service, sending the service info, network channel,
         // and listener that will be used to indicate success or failure of
@@ -135,7 +162,7 @@ public class MainActivity extends AppCompatActivity {
             }
         });
         //WifiP2pServiceRequest serviceRequest = WifiP2pDnsSdServiceRequest.newInstance();
-        WifiP2pUpnpServiceRequest serviceRequest = WifiP2pUpnpServiceRequest.newInstance();
+        WifiP2pUpnpServiceRequest serviceRequest = WifiP2pUpnpServiceRequest.newInstance("urn:schemas-upnp-org:service:P4:1");
         mManager.addServiceRequest(mChannel,
                 serviceRequest,
                 new WifiP2pManager.ActionListener() {
@@ -215,5 +242,40 @@ public class MainActivity extends AppCompatActivity {
         }
 
         return super.onOptionsItemSelected(item);
+    }
+
+    @Override
+    public void setIsWifiP2pEnabled(boolean enabled) {
+
+    }
+
+    @Override
+    public void thisDeviceChanged(WifiP2pDevice device) {
+        mManager.requestConnectionInfo(mChannel, this);
+    }
+
+    @Override
+    public void onConnectionInfoAvailable(WifiP2pInfo info) {
+        // InetAddress from WifiP2pInfo struct.
+        if (info.groupOwnerAddress == null){
+            return;// TODO DISCONNECTED
+        }
+        try {
+            InetAddress groupOwnerAddress = InetAddress.getByName(info.groupOwnerAddress.getHostAddress());
+            Snackbar.make(this.findViewById(android.R.id.content), String.valueOf(groupOwnerAddress), Snackbar.LENGTH_LONG)
+                    .setAction("Action", null).show();
+            // After the group negotiation, we can determine the group owner.
+            if (info.groupFormed && info.isGroupOwner) {
+                // Do whatever tasks are specific to the group owner.
+                // One common case is creating a server thread and accepting
+                // incoming connections.
+            } else if (info.groupFormed) {
+                // The other device acts as the client. In this case,
+                // you'll want to create a client thread that connects to the group
+                // owner.
+            }
+        } catch (UnknownHostException e) {
+            e.printStackTrace();
+        }
     }
 }
