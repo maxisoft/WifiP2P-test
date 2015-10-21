@@ -1,7 +1,6 @@
 package android.dristributed.wifip2p;
 
 import android.content.Context;
-import android.content.Intent;
 import android.content.IntentFilter;
 import android.net.wifi.WpsInfo;
 import android.net.wifi.p2p.WifiP2pConfig;
@@ -36,7 +35,7 @@ import java.util.UUID;
 
 public class MainActivity extends AppCompatActivity implements WiFiDirectBroadcastReceiver.CallBackInterface,
         WifiP2pManager.ConnectionInfoListener,
-        Server.ServerCallBack
+        CommBase.ServerCallBack
 {
     public static final int SERVER_PORT = 3000;
     final List<String> mPeerList = new ArrayList<String>();
@@ -47,7 +46,7 @@ public class MainActivity extends AppCompatActivity implements WiFiDirectBroadca
     private volatile boolean discoverServiceRunning;
     private final IntentFilter intentFilter = new IntentFilter();
     private WiFiDirectBroadcastReceiver receiver;
-    Server mServer;
+    CommBase mCommBase;
     Thread mServerThread;
 
     @Override
@@ -116,7 +115,7 @@ public class MainActivity extends AppCompatActivity implements WiFiDirectBroadca
         super.onPause();
         stopUpnpServices();
         unregisterReceiver(receiver);
-        mServer.stop();
+        mCommBase.stop();
         //TODO
         try{
             mServerThread.join(100);
@@ -135,8 +134,8 @@ public class MainActivity extends AppCompatActivity implements WiFiDirectBroadca
         setupDiscoverService();
         discoverService();
         if (mServerThread == null){
-            mServer = new Server(this);
-            mServerThread = new Thread(mServer);
+            mCommBase = new CommBase(this);
+            mServerThread = new Thread(mCommBase);
             mServerThread.start();
         }
     }

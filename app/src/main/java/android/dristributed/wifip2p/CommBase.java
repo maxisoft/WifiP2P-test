@@ -1,6 +1,7 @@
 package android.dristributed.wifip2p;
 
-import android.util.Log;
+import android.dristributed.wifip2p.gameproto.Comm;
+import android.dristributed.wifip2p.gameproto.CommBaseInterface;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -10,13 +11,14 @@ import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.util.Iterator;
 import java.util.Set;
+import java.util.UUID;
 
-public class Server implements Runnable{
+public class CommBase implements Runnable, Comm {
     private Selector selector;
     private ServerSocketChannel serverSocket;
     private ServerCallBack callBack;
     private volatile boolean stop = false;
-    public Server(ServerCallBack callBack){
+    public CommBase(ServerCallBack callBack){
         setCallBack(callBack);
         try {
             selector = Selector.open();
@@ -24,7 +26,7 @@ public class Server implements Runnable{
             e.printStackTrace();
         }
     }
-    public Server(){
+    public CommBase(){
         this(null);
     }
 
@@ -82,6 +84,17 @@ public class Server implements Runnable{
     public void setCallBack(ServerCallBack callBack) {
         this.callBack = callBack;
     }
+
+    @Override
+    public boolean send(UUID target, CommBaseInterface object) {
+        return false; //TODO
+    }
+
+    @Override
+    public Object recv() {
+        return null; //TODO
+    }
+
 
     interface ServerCallBack {
         void onClientAccepted(SocketChannel client);
