@@ -24,14 +24,20 @@ import android.widget.ArrayAdapter;
 import android.widget.ListView;
 import android.widget.Toast;
 
+import java.io.IOException;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
+import java.nio.channels.SocketChannel;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
-public class MainActivity extends AppCompatActivity implements WiFiDirectBroadcastReceiver.CallBackInterface, WifiP2pManager.ConnectionInfoListener{
+public class MainActivity extends AppCompatActivity implements WiFiDirectBroadcastReceiver.CallBackInterface,
+        WifiP2pManager.ConnectionInfoListener,
+        Server.ServerCallBack
+{
     public static final int SERVER_PORT = 3000;
     final List<String> mPeerList = new ArrayList<String>();
     WifiP2pManager.Channel mChannel;
@@ -41,7 +47,8 @@ public class MainActivity extends AppCompatActivity implements WiFiDirectBroadca
     private volatile boolean discoverServiceRunning;
     private final IntentFilter intentFilter = new IntentFilter();
     private WiFiDirectBroadcastReceiver receiver;
-
+    Server mServer;
+    Thread mServerThread;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -109,6 +116,13 @@ public class MainActivity extends AppCompatActivity implements WiFiDirectBroadca
         super.onPause();
         stopUpnpServices();
         unregisterReceiver(receiver);
+        mServer.stop();
+        //TODO
+        try{
+            mServerThread.join(100);
+        } catch (InterruptedException e) {
+            mServerThread.interrupt();
+        }
     }
 
     @Override
@@ -120,6 +134,11 @@ public class MainActivity extends AppCompatActivity implements WiFiDirectBroadca
         registerService();
         setupDiscoverService();
         discoverService();
+        if (mServerThread == null){
+            mServer = new Server(this);
+            mServerThread = new Thread(mServer);
+            mServerThread.start();
+        }
     }
 
     private void stopUpnpServices() {
@@ -255,13 +274,13 @@ public class MainActivity extends AppCompatActivity implements WiFiDirectBroadca
     }
 
     @Override
-    public void onConnectionInfoAvailable(WifiP2pInfo info) {
+    public void onConnectionInfoAvailable(final WifiP2pInfo info) {
         // InetAddress from WifiP2pInfo struct.
         if (info.groupOwnerAddress == null){
             return;// TODO DISCONNECTED
         }
         try {
-            InetAddress groupOwnerAddress = InetAddress.getByName(info.groupOwnerAddress.getHostAddress());
+            final InetAddress groupOwnerAddress = InetAddress.getByName(info.groupOwnerAddress.getHostAddress());
             Snackbar.make(this.findViewById(android.R.id.content), String.valueOf(groupOwnerAddress), Snackbar.LENGTH_LONG)
                     .setAction("Action", null).show();
             // After the group negotiation, we can determine the group owner.
@@ -273,9 +292,30 @@ public class MainActivity extends AppCompatActivity implements WiFiDirectBroadca
                 // The other device acts as the client. In this case,
                 // you'll want to create a client thread that connects to the group
                 // owner.
+                new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        InetSocketAddress hostAddress = new InetSocketAddress(info.groupOwnerAddress.getHostAddress(), 4000);
+                        try {
+                            SocketChannel client = SocketChannel.open(hostAddress);
+                            Snackbar.make(MainActivity.this.findViewById(android.R.id.content), "connection ok", Snackbar.LENGTH_LONG)
+                                    .setAction("Action", null).show();
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                }).start();
+
             }
         } catch (UnknownHostException e) {
             e.printStackTrace();
         }
+    }
+
+    @Override
+    public void onClientAccepted(SocketChannel client) {
+        Log.i("server", "accepted client " + client.socket().getInetAddress());
+        Snackbar.make(MainActivity.this.findViewById(android.R.id.content), "accepted client " + client.socket().getInetAddress(), Snackbar.LENGTH_LONG)
+                .setAction("Action", null).show();
     }
 }
