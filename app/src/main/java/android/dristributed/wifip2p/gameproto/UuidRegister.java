@@ -8,4 +8,8 @@ public class UuidRegister implements CommBaseInterface {
     public UuidRegister(UUID uuid) {
         this.uuid = uuid;
     }
+
+    public UUID getUuid() {
+        return uuid;
+    }
 }
